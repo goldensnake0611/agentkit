@@ -178,4 +178,11 @@ export class Agentkit {
     }
     return await this.smartAccount.getAddress();
   }
+
+  async getChainId(): Promise<number> {
+    if (!this.smartAccount) {
+      throw new Error("Smart account not configured");
+    }
+    return this.smartAccount.SmartAccountConfig.chainId;
+  }
 }

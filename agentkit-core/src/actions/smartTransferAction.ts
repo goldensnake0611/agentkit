@@ -12,7 +12,7 @@ It takes the following inputs:
 - amount: The amount to transfer
 - tokenAddress: The token contract address (use 'eth' for native ETH transfers)
 - destination: Where to send the funds (must be a valid onchain address)
-- wait: Whether to wait for transaction confirmation (default: false)
+- wait: Whether to wait for transaction confirmation (default: true)
 
 Important notes:
 - Gasless transfers are only available on supported networks: Avalanche C-Chain, Metis chain, BASE, BNB chain, FANTOM, Moonbeam 
@@ -32,7 +32,7 @@ export const SmartTransferInput = z
     wait: z
       .boolean()
       .optional()
-      .default(false)
+      .default(true)
       .describe("Whether to wait for transaction confirmation"),
   })
   .strip()

@@ -19,7 +19,7 @@ You can swap tokens in two ways:
 USAGE GUIDANCE:
 - Provide either tokenIn/tokenOut addresses OR tokenInSymbol/tokenOutSymbol
 - Specify the amount to swap (in the input token's units)
-- Optionally set 'wait: true' to wait for transaction confirmation
+- Optionally set 'wait: false' to not wait for transaction confirmation (default is true)
 - Optionally set a custom slippage (default is "auto")
 - Optionally set 'approveMax: true' to approve maximum token allowance (default is false)
 
@@ -60,7 +60,7 @@ export const SmartSwapInput = z
     wait: z
       .boolean()
       .optional()
-      .default(false)
+      .default(true)
       .describe("Whether to wait for transaction confirmation"),
     approveMax: z
       .boolean()
