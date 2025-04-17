@@ -1,6 +1,7 @@
 import { Agentkit, AgentkitToolkit } from "@0xgasless/agentkit";
 // import { Agentkit, AgentkitToolkit } from "@0xgas/agentkit";
 import { HumanMessage } from "@langchain/core/messages";
+import { StructuredToolInterface } from "@langchain/core/tools";
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
@@ -55,7 +56,7 @@ async function initializeAgent() {
 
     // Initialize AgentKit Toolkit and get tools
     const agentkitToolkit = new AgentkitToolkit(agentkit);
-    const tools = agentkitToolkit.getTools();
+    const tools = agentkitToolkit.getTools() as StructuredToolInterface[];
 
     const memory = new MemorySaver();
     const agentConfig = { configurable: { thread_id: "0xGasless AgentKit Chatbot Example!" } };
@@ -98,7 +99,6 @@ async function initializeAgent() {
  * @param interval - Time interval between actions in seconds
  */
 
-//biome-ignore lint/suspicious/noExplicitAny: <explanation>
 // async function runAutonomousMode(agent: any, config: any, interval = 10) {
 //   console.log("Starting autonomous mode...");
 
