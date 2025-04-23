@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  ZeroXgaslessSmartAccount,
-  UserOpReceipt,
-} from "@0xgasless/smart-account";
+import { ZeroXgaslessSmartAccount, UserOpReceipt } from "@0xgasless/smart-account";
 import { AgentkitAction } from "../agentkit"; // Adjust path if necessary
 
 // Constants for polling logic (can be adjusted)
@@ -11,9 +8,7 @@ const DEFAULT_MAX_DURATION = 60000; // 60 seconds
 
 // 1. Define the schema for the input parameters
 export const GetTransactionStatusSchema = z.object({
-  userOpHash: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/, "Invalid User Operation Hash format."),
+  userOpHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/, "Invalid User Operation Hash format."),
 });
 
 // Infer the type from the schema
@@ -45,31 +40,36 @@ export async function getTransactionStatusFunc(
   let totalDuration = 0;
 
   // Re-implement polling using the SDK's getUserOperationReceipt
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const intervalId = setInterval(async () => {
       try {
-        const receipt: UserOpReceipt | null =
-          await wallet.bundler!.getUserOpReceipt(userOpHash);
+        const receipt: UserOpReceipt | null = await wallet.bundler!.getUserOpReceipt(userOpHash);
 
         // Check if the receipt exists and indicates success
         if (receipt?.success) {
-            const txHash = receipt.receipt?.transactionHash;
-            const blockNumber = receipt.receipt?.blockNumber;
-            if (txHash && blockNumber) {
-                 clearInterval(intervalId);
-                 resolve(`Transaction confirmed! TxHash: ${txHash}, Block: ${Number(blockNumber)}. UserOpHash: ${userOpHash}`);
-                 return;
-            } else {
-                // Still technically success, but maybe log a warning if details missing?
-                clearInterval(intervalId);
-                resolve(`Transaction succeeded but receipt details (TxHash, Block) missing. UserOpHash: ${userOpHash}`);
-                return;
-            }
-        } else if (receipt && !receipt.success) {
-            // Transaction included but failed
+          const txHash = receipt.receipt?.transactionHash;
+          const blockNumber = receipt.receipt?.blockNumber;
+          if (txHash && blockNumber) {
             clearInterval(intervalId);
-            resolve(`Transaction failed. UserOpHash: ${userOpHash}. Reason: ${receipt.reason || 'No reason provided'}.`);
+            resolve(
+              `Transaction confirmed! TxHash: ${txHash}, Block: ${Number(blockNumber)}. UserOpHash: ${userOpHash}`,
+            );
             return;
+          } else {
+            // Still technically success, but maybe log a warning if details missing?
+            clearInterval(intervalId);
+            resolve(
+              `Transaction succeeded but receipt details (TxHash, Block) missing. UserOpHash: ${userOpHash}`,
+            );
+            return;
+          }
+        } else if (receipt && !receipt.success) {
+          // Transaction included but failed
+          clearInterval(intervalId);
+          resolve(
+            `Transaction failed. UserOpHash: ${userOpHash}. Reason: ${receipt.reason || "No reason provided"}.`,
+          );
+          return;
         }
         // If receipt is null, it's still pending
 

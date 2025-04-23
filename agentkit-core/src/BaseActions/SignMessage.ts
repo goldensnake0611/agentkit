@@ -24,7 +24,7 @@ Output:
 
 // 3. Define the core function logic
 export async function signMessageFunc(
-    wallet: ZeroXgaslessSmartAccount, // The wallet instance is passed implicitly
+  wallet: ZeroXgaslessSmartAccount, // The wallet instance is passed implicitly
   { message }: SignMessageInput,
 ): Promise<string> {
   try {
