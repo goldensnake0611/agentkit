@@ -35,10 +35,9 @@ export interface AgentkitAction<TActionSchema extends ActionSchemaAny> {
   /**
    * The function to execute for this action
    */
-  func:
-    | ((wallet: PublicClient, args: z.infer<TActionSchema>) => Promise<string>)
-    | ((wallet: ZeroXgaslessSmartAccount, args: z.infer<TActionSchema>) => Promise<string>)
-    | ((args: z.infer<TActionSchema>) => Promise<string>);
+  func: (wallet: ZeroXgaslessSmartAccount, args: z.infer<TActionSchema>) => Promise<string>;
+  // | ((wallet: PublicClient, args: z.infer<TActionSchema>) => Promise<string>)
+  // | ((args: z.infer<TActionSchema>) => Promise<string>);
 }
 
 /**
@@ -63,11 +62,6 @@ export class Agentkit {
   private publicClient: PublicClient;
   private smartAccount?: ZeroXgaslessSmartAccount;
 
-  /**
-   * Initializes a new Agentkit instance with a public client
-   *
-   * @param config - Configuration options for the Agentkit
-   */
   public constructor(config: PublicAgentOptions) {
     if (!supportedChains[config.chainID]) {
       throw new Error(`Chain ID ${config.chainID} is not supported`);
@@ -80,13 +74,6 @@ export class Agentkit {
     });
   }
 
-  /**
-   * Configures Agentkit with a Smart Account for gasless transactions
-   *
-   * @param config - Smart agent configuration parameters
-   * @returns A Promise that resolves to a new Agentkit instance
-   * @throws Error if required parameters are missing or initialization fails
-   */
   public static async configureWithWallet(config: SmartAgentOptions): Promise<Agentkit> {
     if (!config.apiKey || config.apiKey === "") {
       throw new Error("API_KEY is required for smart agent configuration");
@@ -130,52 +117,29 @@ export class Agentkit {
     return agentkit;
   }
 
-  /**
-   * Executes an action
-   *
-   * @param action - The action to execute
-   * @param args - Arguments for the action
-   * @returns Result of the action execution
-   * @throws Error if action execution fails
-   */
   async run<TActionSchema extends ActionSchemaAny>(
     action: AgentkitAction<TActionSchema>,
     args: TActionSchema,
   ): Promise<string> {
-    // Check function parameter count to determine execution path
-    const paramCount = action.func.length;
-
-    // For functions that only take args (no client/wallet)
-    if (paramCount === 1) {
-      return await (action.func as (args: TActionSchema) => Promise<string>)(args);
+    if (!this.smartAccount) {
+      return `Unable to run Action: ${action.name}. A Smart Account is required. Please configure Agentkit with a Wallet to run this action.`;
     }
-
-    // For functions that require smart account
-    if (paramCount > 1 && action.smartAccountRequired) {
-      if (!this.smartAccount) {
-        return `Unable to run Action: ${action.name}. A Smart Account is required. Please configure Agentkit with a Wallet to run this action.`;
-      }
-      return await (
-        action.func as (account: ZeroXgaslessSmartAccount, args: TActionSchema) => Promise<string>
-      )(this.smartAccount, args);
-    }
-
-    return await (action.func as (client: PublicClient, args: TActionSchema) => Promise<string>)(
-      this.publicClient,
-      args,
-    );
+    return await (
+      action.func as (account: ZeroXgaslessSmartAccount, args: TActionSchema) => Promise<string>
+    )(this.smartAccount, args);
   }
 
-  /**
-   * Gets the smart account address if configured
-   *
-   * @returns The smart account address
-   * @throws Error if smart account is not configured
-   */
   async getAddress(): Promise<string> {
     if (!this.smartAccount) {
       throw new Error("Smart account not configured");
     }
     return await this.smartAccount.getAddress();
+  }
+
+  async getChainId(): Promise<number> {
+    if (!this.smartAccount) {
+      throw new Error("Smart account not configured");
+    }
+    return this.smartAccount.SmartAccountConfig.chainId;
   }
 }

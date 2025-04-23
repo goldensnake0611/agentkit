@@ -1,4 +1,3 @@
-import { CreateWalletAction } from "./createWalletAction";
 import { GetBalanceAction } from "./getBalanceAction";
 import { SmartTransferAction } from "./smartTransferAction";
 import { GetTokenDetailsAction } from "./getTokenDetailsAction";
@@ -12,7 +11,6 @@ export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
     new GetBalanceAction(),
     new GetAddressAction(),
     new GetTokenDetailsAction(),
-    new CreateWalletAction(),
     new CheckTransactionAction(),
     new SmartTransferAction(),
     new SmartSwapAction(),
