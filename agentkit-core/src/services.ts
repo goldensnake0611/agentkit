@@ -35,23 +35,37 @@ export async function sendTransaction(
         mode: PaymasterMode.SPONSORED,
       },
     });
+
     if (request.error) {
       return {
         success: false,
-        userOpHash: request.userOpHash as string,
         error: request.error,
       };
     }
-    // Return the userOpHash immediately with guidance
+
+    const receipt = await request.wait();
+
+    if (receipt.reason) {
+      return {
+        success: false,
+        error: receipt.reason,
+      };
+    }
+    if (receipt.success && receipt.receipt?.transactionHash) {
+      return {
+        success: true,
+        txHash: receipt.receipt?.transactionHash,
+        message: `Transaction confirmed!\nTx Hash: ${receipt.receipt?.transactionHash}\n\n.`,
+        receipt,
+      };
+    }
     return {
-      success: true,
-      userOpHash: request.userOpHash as string,
-      message: `Transaction submitted successfully!\nUser Operation Hash: ${request.userOpHash}\n\nYou can check the transaction status using the 'check_transaction_status' action.`,
+      success: false,
+      error: `Transaction failed: ${receipt.reason}`,
     };
   } catch (error) {
     return {
       success: false,
-      userOpHash: "",
       error: `Transaction Error: ${error}`,
     };
   }

@@ -3,7 +3,6 @@ import { Transaction, ZeroXgaslessSmartAccount } from "@0xgasless/smart-account"
 import { AgentkitAction } from "../../agentkit";
 import {
   sendTransaction,
-  waitForTransaction,
   formatTokenAmount,
   resolveTokenSymbol,
   checkAndApproveTokenAllowance,
@@ -19,18 +18,17 @@ You can swap tokens in two ways:
 USAGE GUIDANCE:
 - Provide either tokenIn/tokenOut addresses OR tokenInSymbol/tokenOutSymbol
 - Specify the amount to swap (in the input token's units)
-- Optionally set 'wait: false' to not wait for transaction confirmation (default is true)
 - Optionally set a custom slippage (default is "auto")
 - Optionally set 'approveMax: true' to approve maximum token allowance (default is false)
 
 EXAMPLES:
 - Swap by address: "Swap 10 from 0x123... to 0x456..."
 - Swap by symbol: "Swap 10 USDC to ETH"
-- With waiting: "Swap 5 USDT to USDC and wait for confirmation"
 - With max approval: "Swap 10 USDT to ETH with approveMax: true"
 
 Note: This action works on supported networks only (Base, Fantom, Moonbeam, Metis, Avalanche, BSC).
 All swaps are gasless - no native tokens needed for gas fees.
+The transaction will be submitted and the tool will wait for confirmation by default.
 `;
 
 export const SmartSwapInput = z
@@ -57,11 +55,6 @@ export const SmartSwapInput = z
       .optional()
       .default("auto")
       .describe("Slippage tolerance in percentage (e.g., '0.5') or 'auto'"),
-    wait: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("Whether to wait for transaction confirmation"),
     approveMax: z
       .boolean()
       .optional()
@@ -221,19 +214,18 @@ Example: "Swap 0.01 USDT to WETH with approveMax: true"`;
         return `Failed to approve token spending: ${approvalResult.error}`;
       }
 
-      // If we're waiting for confirmation and there was an approval transaction, wait for it
+      // If an approval transaction was sent (it now waits by default),
+      // check its result.
       if (approvalResult.userOpHash) {
-        const approvalStatus = await waitForTransaction(wallet, approvalResult.userOpHash);
-
-        if (approvalStatus.status !== "confirmed") {
-          return `Token approval failed: ${approvalStatus.error || "Unknown error"}`;
-        }
-      } else if (approvalResult.userOpHash) {
-        console.log(`Token approval submitted with hash: ${approvalResult.userOpHash}`);
+        // The `sendTransaction` within `approveToken` (called by `checkAndApproveTokenAllowance`)
+        // now waits for confirmation. We just need to check the final result.
+        // The `approvalResult` reflects the final status.
+        console.log(`Token approval successful. UserOpHash: ${approvalResult.userOpHash}`);
       }
     }
 
     const txResponse = await sendTransaction(wallet, transactionData.tx as Transaction);
+
     if (!txResponse.success) {
       if (
         typeof txResponse.error === "string" &&
@@ -245,43 +237,20 @@ Example: "Swap 0.01 USDT to WETH with approveMax: true"`;
 Please try again with "approveMax: true" parameter to automatically approve token spending.
 Example: "Swap 0.01 USDT to WETH with approveMax: true"`;
       }
-
       return `Swap failed: ${
         typeof txResponse.error === "string" ? txResponse.error : JSON.stringify(txResponse.error)
       }`;
     }
 
-    const inSymbol =
-      transactionData.tokenIn.symbol || tokenInDetails?.symbol || args.tokenInSymbol || "tokens";
-    const outSymbol =
-      transactionData.tokenOut.symbol || tokenOutDetails?.symbol || args.tokenOutSymbol || "tokens";
+    // Remove the logic block for `if (args.wait)` and `waitForTransaction`
+    // Update the success message based on the awaited result from sendTransaction
+    const inSymbol = tokenInDetails?.symbol || args.tokenInSymbol || "tokens";
+    const outSymbol = tokenOutDetails?.symbol || args.tokenOutSymbol || "tokens";
 
-    if (args.wait) {
-      const status = await waitForTransaction(wallet, txResponse.userOpHash);
-      if (status.status === "confirmed") {
-        return `Swap completed and confirmed in block ${status.blockNumber}!
-Input: ${transactionData.tokenIn.amount} ${inSymbol}
-Expected Output: ${transactionData.tokenOut.amount} ${outSymbol}
-Transaction Hash: ${status.receipt?.receipt?.transactionHash || txResponse.userOpHash}`;
-      } else {
-        return `Swap status: ${status.status}
-${status.error || ""}
-User Operation Hash: ${txResponse.userOpHash}`;
-      }
-    }
-
-    return `Swap order submitted successfully!
-Input: ${transactionData.tokenIn.amount} ${inSymbol}
-Expected Output: ${transactionData.tokenOut.amount} ${outSymbol}
-User Operation Hash: ${txResponse.userOpHash}
-
-You can either:
-1. Check the status by asking: "What's the status of transaction ${txResponse.userOpHash}?"
-2. Or next time, add "wait: true" to wait for confirmation, like: "Swap 100 USDC to USDT and wait for confirmation"
-3. If you encounter allowance errors, add "approveMax: true" to approve maximum token spending`;
+    return `Swap successful!\nInput: ${args.amount} ${inSymbol}\n(Approximate) Output: ${tokenOutDetails?.amount || "?"} ${outSymbol}\nTx Hash: ${txResponse.txHash}`;
   } catch (error) {
-    console.error("Swap error:", error);
-    return `Error creating swap order: ${error instanceof Error ? error.message : String(error)}`;
+    console.error("Smart Swap Error:", error);
+    return `An unexpected error occurred during the swap: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 

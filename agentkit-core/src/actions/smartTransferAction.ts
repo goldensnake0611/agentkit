@@ -2,21 +2,20 @@ import { z } from "zod";
 import { ZeroXgaslessSmartAccount, Transaction } from "@0xgasless/smart-account";
 import { encodeFunctionData, parseEther, parseUnits } from "viem";
 import { TokenABI } from "../constants";
-import { sendTransaction, waitForTransaction } from "../services";
+import { sendTransaction } from "../services";
 import { AgentkitAction } from "../agentkit";
 
 const SMART_TRANSFER_PROMPT = `
-This tool will transfer an ERC20 token from the wallet to another onchain address using gasless transactions.
+This tool will transfer an ERC20 token or native currency from the wallet to another onchain address using gasless transactions.
 
 It takes the following inputs:
 - amount: The amount to transfer
-- tokenAddress: The token contract address (use 'eth' for native ETH transfers)
+- tokenAddress: The token contract address (use 'eth' for native currency transfers)
 - destination: Where to send the funds (must be a valid onchain address)
-- wait: Whether to wait for transaction confirmation (default: true)
 
 Important notes:
-- Gasless transfers are only available on supported networks: Avalanche C-Chain, Metis chain, BASE, BNB chain, FANTOM, Moonbeam 
-- If you want to wait for confirmation, you can instruct the agent to do so explicitly, by default it wont wait and will return the userOpHash
+- Gasless transfers are only available on supported networks: Avalanche C-Chain, Metis chain, BASE, BNB chain, FANTOM, Moonbeam.
+- The transaction will be submitted and the tool will wait for confirmation by default.
 `;
 
 /**
@@ -27,13 +26,8 @@ export const SmartTransferInput = z
     amount: z.string().describe("The amount of tokens to transfer"),
     tokenAddress: z
       .string()
-      .describe("The token contract address or 'eth' for native ETH transfers"),
+      .describe("The token contract address or 'eth' for native currency transfers"),
     destination: z.string().describe("The recipient address"),
-    wait: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("Whether to wait for transaction confirmation"),
   })
   .strip()
   .describe("Instructions for transferring tokens from a smart account to an onchain address");
@@ -84,28 +78,14 @@ export async function smartTransfer(
     }
 
     const response = await sendTransaction(wallet, tx);
+
     if (!response || !response.success) {
       return `Transaction failed: ${response?.error || "Unknown error"}`;
     }
 
-    if (args.wait) {
-      const status = await waitForTransaction(wallet, response.userOpHash);
-      if (status.status === "confirmed") {
-        return `Successfully transferred ${args.amount} ${
-          isEth ? "ETH" : `tokens from contract ${args.tokenAddress}`
-        } to ${args.destination}.\nTransaction confirmed in block ${status.blockNumber}!`;
-      } else {
-        return `Transaction status: ${status.status}\n${status.error || ""}`;
-      }
-    }
-
-    return `Successfully submitted transfer of ${args.amount} ${
+    return `The transaction has been confirmed on the blockchain. Successfully transferred ${args.amount} ${
       isEth ? "ETH" : `tokens from contract ${args.tokenAddress}`
-    } to ${args.destination}.\n${response.message}\n\nYou can either:
-1. Check the status by asking: 
-    - "What's the status of transaction ${response.userOpHash}?"
-    - "check for the status of transaction hash above"
-2. Or next time, instruct the agent to wait for confirmation, like: "Transfer 1 ETH to 0x... and wait for confirmation"`;
+    } to ${args.destination}. Transaction Hash: ${response.txHash}`;
   } catch (error) {
     return `Error transferring the asset: ${error}`;
   }

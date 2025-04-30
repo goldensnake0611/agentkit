@@ -2,9 +2,11 @@ import { UserOpReceipt } from "@0xgasless/smart-account";
 
 export type TransactionResponse = {
   success: boolean;
-  userOpHash: string;
+  userOpHash?: string;
+  txHash?: string;
   error?: string | { message: string; code: number };
   message?: string;
+  receipt?: UserOpReceipt;
 };
 
 export type TokenDetails = {
