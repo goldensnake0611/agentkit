@@ -83,7 +83,7 @@ export async function smartTransfer(
       return `Transaction failed: ${response?.error || "Unknown error"}`;
     }
 
-    return `Successfully transferred ${args.amount} ${
+    return `The transaction has been confirmed on the blockchain. Successfully transferred ${args.amount} ${
       isEth ? "ETH" : `tokens from contract ${args.tokenAddress}`
     } to ${args.destination}. Transaction Hash: ${response.txHash}`;
   } catch (error) {
