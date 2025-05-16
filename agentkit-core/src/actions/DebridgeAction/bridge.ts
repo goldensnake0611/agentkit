@@ -22,6 +22,7 @@ USAGE GUIDANCE:
 - Optionally, you can provide a 'recipientAddress' for the tokens on the destination chain. If not provided, tokens will be sent to your agent's wallet address.
 - Optionally, set a custom 'slippage' (e.g., "0.5" for 0.5%). Default is "1".
 - Optionally, set 'approveMax: true' to approve maximum token allowance for the input token. Default is false.
+- Optionally, set 'payProtocolFee: true' to include the deBridge protocol fee. Default is true. NOTE: The smart account MUST have enough NATIVE currency (e.g., BNB, ETH) to cover this fee.
 
 EXAMPLES:
 - Bridge 100 USDC from Ethereum (1) to Polygon (137) for DAI: 
@@ -29,7 +30,7 @@ EXAMPLES:
   (Assuming the tool maps this to the correct JSON input with chain IDs and token addresses)
 
 Note: This action works with Debridge DLN supported chains and tokens.
-All transactions on the source chain are gasless if using a 0xgasless smart account.
+All transactions on the source chain are gasless if using a 0xgasless smart account, BUT the deBridge protocol itself charges a fixed native currency fee (e.g., 0.005 BNB) that must be available in the smart account.
 The tool will submit the transaction and wait for confirmation by default.
 `;
 
@@ -80,6 +81,13 @@ export const SmartBridgeInput = z
       .describe(
         "Optional: Whether to approve maximum token allowance for the input token. Default is false.",
       ),
+    payProtocolFee: z
+      .boolean()
+      .optional()
+      .default(true) // CHANGED: Default to true as deBridge requires this native fee.
+      .describe(
+        "Optional: Whether to include the deBridge protocol fee. Default is true. Smart account needs NATIVE currency for this.",
+      ),
   })
   .strip()
   .describe("Instructions for bridging tokens cross-chain via Debridge DLN");
@@ -129,6 +137,9 @@ export async function smartBridge(
       dstChainTokenOutRecipient: recipient,
       slippage: args.slippage,
       senderAddress: senderAddress, // Required by create-tx
+      // Explicitly set authority addresses to ensure we get the final transaction
+      srcChainOrderAuthorityAddress: senderAddress,
+      dstChainOrderAuthorityAddress: recipient,
       // affiliateFeePercent: "0", // Optional, defaults to 0
     });
     const debridgeApiUrl = `${debridgeApiBaseUrl}?${queryParams.toString()}`;
@@ -136,6 +147,7 @@ export async function smartBridge(
     // 3. Call Debridge API
     let apiResponseData;
     try {
+      console.log("Calling Debridge API:", debridgeApiUrl);
       const response = await fetch(debridgeApiUrl);
       apiResponseData = await response.json();
 
@@ -160,98 +172,211 @@ export async function smartBridge(
         return `Error from Debridge API (${response.status}): ${errorDetail}`;
       }
 
-      // Validate that we have tx and estimation data
-      if (!apiResponseData.tx || !apiResponseData.estimation) {
-        console.error("Debridge API response missing tx or estimation:", apiResponseData);
-        return "Error: Debridge API response is incomplete. Missing transaction or estimation data.";
+      // Validate that we have tx data
+      if (!apiResponseData.tx) {
+        console.error("Debridge API response missing tx:", apiResponseData);
+        return "Error: Debridge API response is incomplete. Missing transaction data.";
       }
     } catch (error) {
       console.error("Error calling Debridge API:", error);
       return `Error calling Debridge API: ${error instanceof Error ? error.message : String(error)}`;
     }
 
-    const { tx, estimation } = apiResponseData;
-    const { recommendedSlippage, srcChainTokenIn, dstChainTokenOut } = estimation;
+    const { tx } = apiResponseData;
+    
+    // 4. Check if we need to handle a preliminary approval (for non-reserve assets)
+    // This will be indicated by tx having allowanceTarget and allowanceValue instead of to/data/value
+    if (tx.allowanceTarget && tx.allowanceValue) {
+      console.log("Debridge API response suggests a preliminary approval is needed (likely for non-reserve asset pre-swap):");
+      console.log(`  Token to approve: ${args.tokenInAddress}`);
+      console.log(`  Spender: ${tx.allowanceTarget}`);
+      console.log(`  Amount: ${tx.allowanceValue}`);
+      
+      // 4a. Perform the preliminary approval for a Pre-Order-Swap
+      try {
+        const approvalResult = await checkAndApproveTokenAllowance(
+          wallet,
+          args.tokenInAddress as `0x${string}`,
+          tx.allowanceTarget as `0x${string}`,
+          BigInt(tx.allowanceValue), // Amount to approve from API
+          true, // Always approveMax for DeFi operations
+        );
 
-    // 4. Token Approval (Source Chain)
-    // Native currency is usually 0x0 or 0xeeee... Debridge uses the actual token address for native (e.g. WETH)
-    // We should always check allowance unless it's the chain's native gas token (which wouldn't be an ERC20 to approve)
-    // The `create-tx` endpoint should handle native assets correctly by omitting `data` for simple transfers or wrapping if needed.
-    // For ERC20s, `tx.to` will be the DLN contract, and `tx.data` will be the call to transferFrom or similar.
-    // We need to approve `tx.to` (DLN contract) to spend `args.tokenInAddress`.
-    // The `create-tx` endpoint is for fixed input amount, so `srcChainTokenIn.amount` from estimation should match `formattedAmount`.
+        if (!approvalResult.success) {
+          return `Failed to approve preliminary token spending for ${args.tokenInAddress} to ${tx.allowanceTarget}: ${approvalResult.error}`;
+        }
 
-    // Only approve if tokenInAddress is not a native-like address (though debridge might wrap it)
-    // A robust check is to see if tx.data exists. If it's a simple native send, tx.data might be empty.
-    // However, DLN always interacts with its contract, so tx.data should always be present for ERC20s.
-    // The safe bet is to check approval for any non-zero tokenInAddress if tx.data is present.
-    // Debridge docs imply `srcChainTokenIn` is the actual token being sent. If it's native ETH, it will be tx.value.
-    // If it's an ERC20, it will be a contract call.
-
-    // If `tx.value` is present and non-zero, it's likely a native asset transfer (or part of it).
-    // If `tx.data` is present, it's a contract interaction.
-    // For ERC20s, `tx.value` should be 0 or undefined.
-    // We only need to approve if `args.tokenInAddress` is an ERC20.
-    // A common way to check if a token is native is if its address is the zero address or a special placeholder.
-    // However, Debridge might expect WETH for ETH. Let's assume any token address needs approval step
-    // unless it's explicitly known to be the native gas token of the chain AND debridge handles it via msg.value.
-    // The `create-tx` gives us `tx.value`. If this is > 0, it's handling native. Otherwise, it's ERC20.
-
-    if (!(tx.value && BigInt(tx.value) > 0)) {
-      // If not sending native currency via tx.value
-      const spenderAddress = tx.to as `0x${string}`;
-      const approvalResult = await checkAndApproveTokenAllowance(
-        wallet,
-        args.tokenInAddress as `0x${string}`,
-        spenderAddress,
-        BigInt(formattedAmount), // Amount to approve
-        args.approveMax,
-      );
-
-      if (!approvalResult.success) {
-        return `Failed to approve token spending for ${args.tokenInAddress}: ${approvalResult.error}`;
+        console.log(
+          `Preliminary token approval successful for ${args.tokenInAddress} to ${tx.allowanceTarget}. UserOpHash: ${approvalResult.userOpHash}`,
+        );
+      } catch (error) {
+        console.error("Error during preliminary token approval:", error);
+        return `Error during preliminary token approval: ${error instanceof Error ? error.message : String(error)}`;
       }
 
-      if (approvalResult.userOpHash) {
-        console.log(
-          `Token approval successful for ${args.tokenInAddress}. UserOpHash: ${approvalResult.userOpHash}`,
-        );
+      // 4b. Call the Debridge API again with the same parameters to get the actual transaction
+      try {
+        console.log("Calling Debridge API again after preliminary approval to get final transaction data...");
+        const secondResponse = await fetch(debridgeApiUrl);
+        const secondApiResponseData = await secondResponse.json();
+
+        if (!secondResponse.ok) {
+          console.error("Second Debridge API Error Response:", secondApiResponseData);
+          const errorDetail =
+            secondApiResponseData.error ||
+            secondApiResponseData.message ||
+            JSON.stringify(secondApiResponseData.details || secondApiResponseData);
+          return `Error from Debridge API on second call (${secondResponse.status}): ${errorDetail}`;
+        }
+
+        // Validate that we now have the actual tx data (to, data, value)
+        if (!secondApiResponseData.tx || !secondApiResponseData.tx.to) {
+          console.error("Second Debridge API response still missing proper tx data (expected 'to', 'data', 'value'):", secondApiResponseData);
+          return "Error: Debridge API response after preliminary approval is still incomplete. Missing proper transaction data.";
+        }
+
+        // Update our tx and estimation with the new data
+        apiResponseData = secondApiResponseData;
+        console.log("Successfully received final transaction data from second API call.");
+      } catch (error) {
+        console.error("Error calling Debridge API after preliminary approval:", error);
+        return `Error calling Debridge API after preliminary approval: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
 
-    // 5. Send Transaction (Source Chain)
+    // Re-extract tx and estimation from the updated apiResponseData
+    const { tx: finalTx, estimation, fixFee } = apiResponseData;
+    const { recommendedSlippage, srcChainTokenIn, dstChainTokenOut } = estimation || {};
+
+    // Check and log the protocol fee information
+    let protocolFeeInfo = "";
+    let nativeFeeAmount = 0n;
+    if (fixFee) {
+      nativeFeeAmount = BigInt(fixFee);
+      const formattedFee = formatBigIntToEth(nativeFeeAmount);
+      console.log(`deBridge API reported fixed protocol fee (fixFee): ${formattedFee} native currency (${fixFee} wei)`);
+      protocolFeeInfo = `deBridge protocol fee: ${formattedFee} native currency`;
+    }
+    if (finalTx.value) {
+      const txValue = BigInt(finalTx.value);
+      console.log(`Transaction.value from API: ${formatBigIntToEth(txValue)} native currency (${finalTx.value} wei)`);
+      if (!fixFee && txValue > 0n) {
+        nativeFeeAmount = txValue; // Use tx.value if fixFee wasn't present but tx.value is
+        protocolFeeInfo = `deBridge protocol fee (from tx.value): ${formatBigIntToEth(txValue)} native currency`;
+      }
+      // If we have both fixFee and tx.value, verify they're at least related or equal
+      if (fixFee && nativeFeeAmount > 0n && txValue !== nativeFeeAmount) {
+        console.warn(`Warning: Transaction.value (${finalTx.value}) from API differs from reported fixFee (${fixFee}). Using tx.value for fee if payProtocolFee is true.`);
+        nativeFeeAmount = txValue; // Prioritize tx.value if different and present
+      }
+    }
+
+    // 5. Token Approval for the main transaction (Source Chain)
+    const spenderAddress = finalTx.to as `0x${string}`;
+    const approvalResult = await checkAndApproveTokenAllowance(
+      wallet,
+      args.tokenInAddress as `0x${string}`,
+      spenderAddress,
+      BigInt(formattedAmount), // Amount to approve
+      true, // Always approve max for DeFi operations
+    );
+
+    if (!approvalResult.success) {
+      return `Failed to approve token spending for ${args.tokenInAddress} to main contract ${spenderAddress}: ${approvalResult.error}`;
+    }
+
+    if (approvalResult.userOpHash) {
+      console.log(
+        `Main token approval successful for ${args.tokenInAddress} to ${spenderAddress}. UserOpHash: ${approvalResult.userOpHash}`,
+      );
+    }
+
+    // 6. Send Transaction (Source Chain)
+    const transactionValue = args.payProtocolFee ? nativeFeeAmount : 0n;
+    
+    if (!args.payProtocolFee && nativeFeeAmount > 0n) {
+      console.log(`User has set payProtocolFee to false. Overriding transaction value from ${nativeFeeAmount.toString()} to 0.`);
+      console.log(`This is to ensure compatibility with paymasters that may not sponsor transactions with a native value.`);
+    } else if (args.payProtocolFee && nativeFeeAmount === 0n && finalTx.value && BigInt(finalTx.value) > 0n) {
+      console.warn(`Warning: payProtocolFee is true, but calculated nativeFeeAmount is 0. However, finalTx.value from API is ${finalTx.value}. Consider if this fee should be paid.`);
+    } else if (args.payProtocolFee && nativeFeeAmount > 0n) {
+      console.log(`Including deBridge protocol fee of ${nativeFeeAmount.toString()} wei in transaction value.`);
+    }
+
     const transactionToSubmit: Transaction = {
-      to: tx.to as `0x${string}`,
-      data: (tx.data as `0x${string}` | undefined) || "0x", // Default to "0x" if undefined
-      value: tx.value ? BigInt(tx.value) : undefined,
+      to: finalTx.to as `0x${string}`,
+      data: (finalTx.data as `0x${string}` | undefined) || "0x", // Default to "0x" if undefined
+      value: transactionValue,
     };
 
-    const txResponse = await sendTransaction(wallet, transactionToSubmit);
+    console.log("Submitting transaction to bridge:", {
+      to: transactionToSubmit.to,
+      dataLength: transactionToSubmit.data ? transactionToSubmit.data.length : 0,
+      value: transactionValue.toString(),
+      payProtocolFee: args.payProtocolFee,
+    });
 
-    if (!txResponse.success) {
-      return `Bridge transaction failed: ${
-        typeof txResponse.error === "string" ? txResponse.error : JSON.stringify(txResponse.error)
-      }`;
-    }
+    try {
+      const txResponse = await sendTransaction(wallet, transactionToSubmit);
 
-    // 6. Return Result
-    // Debridge's estimation provides human-readable amounts/symbols.
-    const inputAmountHuman = args.amount; // The user's input
-    const inputSymbol = srcChainTokenIn.symbol || args.tokenInAddress;
-    const outputAmountHuman = dstChainTokenOut.amount; // Expected output from estimation
-    const outputSymbol = dstChainTokenOut.symbol || args.tokenOutAddress;
+      if (!txResponse.success) {
+        console.error("Bridge transaction failed details:", txResponse.error);
+        let errorMessage = typeof txResponse.error === "string" ? txResponse.error : JSON.stringify(txResponse.error);
+        
+        if (errorMessage.includes("execution reverted") || errorMessage.includes("missing response")) {
+          errorMessage += `\n\nThis may be due to one of the following issues:
+1. Insufficient token allowance for the deBridge contract to spend ${args.tokenInAddress}.
+2. Insufficient NATIVE currency balance in the smart account to cover the deBridge protocol fee (if payProtocolFee is true). Current fee: ${nativeFeeAmount > 0n ? formatBigIntToEth(nativeFeeAmount) + " native currency." : "(not detected or set to 0)."}
+3. Insufficient underlying ${srcChainTokenIn?.symbol || args.tokenInAddress} balance.
+4. Issues with the paymaster or bundler (e.g., account not funded with paymaster, or network congestion).
+5. If a pre-swap to a reserve asset was involved, there might have been issues with that internal swap.`;
+        }
+        
+        return `Bridge transaction failed: ${errorMessage}`;
+      }
 
-    return `Bridge transaction submitted successfully!
+      // 7. Return Result
+      const inputAmountHuman = args.amount;
+      const inputSymbol = srcChainTokenIn?.symbol || args.tokenInAddress;
+      const outputAmountHuman = dstChainTokenOut?.amount || "Unknown";
+      const outputSymbol = dstChainTokenOut?.symbol || args.tokenOutAddress;
+      const slippageValue = recommendedSlippage || args.slippage;
+
+      let resultMessage = `Bridge transaction submitted successfully!
 Source Tx Hash: ${txResponse.txHash}
 Sending: ${inputAmountHuman} ${inputSymbol} (from chain ${args.fromChainId})
 Est. Receiving: ${outputAmountHuman} ${outputSymbol} (on chain ${args.toChainId})
 Recipient: ${recipient}
-Recommended slippage by Debridge: ${recommendedSlippage || args.slippage}%
-Note: Actual received amount may vary. Check the order status via Debridge for updates.`;
+Slippage: ${slippageValue}%`;
+
+      if (protocolFeeInfo) {
+        if (args.payProtocolFee && nativeFeeAmount > 0n) {
+          resultMessage += `\n${protocolFeeInfo} (included in transaction)`;
+        } else if (nativeFeeAmount > 0n) {
+          resultMessage += `\n${protocolFeeInfo} (detected, but EXCLUDED from transaction as payProtocolFee is false)`;
+        }
+      }
+
+      resultMessage += `\nNote: Actual received amount may vary. Check the order status via Debridge for updates.`;
+      
+      return resultMessage;
+    } catch (error) {
+      console.error("Error during bridge transaction submission:", error);
+      return `Error during bridge transaction submission: ${error instanceof Error ? error.message : String(error)}`;
+    }
   } catch (error) {
     console.error("Smart Bridge Error:", error);
     return `An unexpected error occurred during the bridge operation: ${error instanceof Error ? error.message : String(error)}`;
   }
+}
+
+// Helper function to format BigInt wei values to ETH with appropriate decimal places
+function formatBigIntToEth(wei: bigint): string {
+  const etherValue = Number(wei) / 1e18;
+  // Show more precision for very small ETH values, less for larger ones.
+  if (etherValue === 0) return "0";
+  const precision = etherValue < 0.0001 ? 8 : (etherValue < 0.01 ? 6 : 4);
+  return etherValue.toFixed(precision);
 }
 
 export class SmartBridgeAction implements AgentkitAction<typeof SmartBridgeInput> {
