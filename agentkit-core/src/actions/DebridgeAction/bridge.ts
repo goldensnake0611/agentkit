@@ -140,6 +140,7 @@ export async function smartBridge(
       // Explicitly set authority addresses to ensure we get the final transaction
       srcChainOrderAuthorityAddress: senderAddress,
       dstChainOrderAuthorityAddress: recipient,
+      referralCode: "31676",
       // affiliateFeePercent: "0", // Optional, defaults to 0
     });
     const debridgeApiUrl = `${debridgeApiBaseUrl}?${queryParams.toString()}`;
