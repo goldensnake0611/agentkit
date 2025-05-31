@@ -5,6 +5,7 @@ import { CheckTransactionAction } from "./checkTransactionAction";
 import { SmartSwapAction, SmartBridgeAction } from "./DebridgeAction";
 import { AgentkitAction, ActionSchemaAny } from "../agentkit";
 import { GetAddressAction } from "./getAddressAction";
+import { CreateAndStoreKeyAction } from "./createAndStoreKeyAction";
 
 export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
   return [
@@ -15,6 +16,7 @@ export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
     new SmartTransferAction(),
     new SmartSwapAction(),
     new SmartBridgeAction(),
+    new CreateAndStoreKeyAction(),
   ];
 }
 

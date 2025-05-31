@@ -184,15 +184,17 @@ export async function smartBridge(
     }
 
     const { tx } = apiResponseData;
-    
+
     // 4. Check if we need to handle a preliminary approval (for non-reserve assets)
     // This will be indicated by tx having allowanceTarget and allowanceValue instead of to/data/value
     if (tx.allowanceTarget && tx.allowanceValue) {
-      console.log("Debridge API response suggests a preliminary approval is needed (likely for non-reserve asset pre-swap):");
+      console.log(
+        "Debridge API response suggests a preliminary approval is needed (likely for non-reserve asset pre-swap):",
+      );
       console.log(`  Token to approve: ${args.tokenInAddress}`);
       console.log(`  Spender: ${tx.allowanceTarget}`);
       console.log(`  Amount: ${tx.allowanceValue}`);
-      
+
       // 4a. Perform the preliminary approval for a Pre-Order-Swap
       try {
         const approvalResult = await checkAndApproveTokenAllowance(
@@ -217,7 +219,9 @@ export async function smartBridge(
 
       // 4b. Call the Debridge API again with the same parameters to get the actual transaction
       try {
-        console.log("Calling Debridge API again after preliminary approval to get final transaction data...");
+        console.log(
+          "Calling Debridge API again after preliminary approval to get final transaction data...",
+        );
         const secondResponse = await fetch(debridgeApiUrl);
         const secondApiResponseData = await secondResponse.json();
 
@@ -232,7 +236,10 @@ export async function smartBridge(
 
         // Validate that we now have the actual tx data (to, data, value)
         if (!secondApiResponseData.tx || !secondApiResponseData.tx.to) {
-          console.error("Second Debridge API response still missing proper tx data (expected 'to', 'data', 'value'):", secondApiResponseData);
+          console.error(
+            "Second Debridge API response still missing proper tx data (expected 'to', 'data', 'value'):",
+            secondApiResponseData,
+          );
           return "Error: Debridge API response after preliminary approval is still incomplete. Missing proper transaction data.";
         }
 
@@ -255,19 +262,25 @@ export async function smartBridge(
     if (fixFee) {
       nativeFeeAmount = BigInt(fixFee);
       const formattedFee = formatBigIntToEth(nativeFeeAmount);
-      console.log(`deBridge API reported fixed protocol fee (fixFee): ${formattedFee} native currency (${fixFee} wei)`);
+      console.log(
+        `deBridge API reported fixed protocol fee (fixFee): ${formattedFee} native currency (${fixFee} wei)`,
+      );
       protocolFeeInfo = `deBridge protocol fee: ${formattedFee} native currency`;
     }
     if (finalTx.value) {
       const txValue = BigInt(finalTx.value);
-      console.log(`Transaction.value from API: ${formatBigIntToEth(txValue)} native currency (${finalTx.value} wei)`);
+      console.log(
+        `Transaction.value from API: ${formatBigIntToEth(txValue)} native currency (${finalTx.value} wei)`,
+      );
       if (!fixFee && txValue > 0n) {
         nativeFeeAmount = txValue; // Use tx.value if fixFee wasn't present but tx.value is
         protocolFeeInfo = `deBridge protocol fee (from tx.value): ${formatBigIntToEth(txValue)} native currency`;
       }
       // If we have both fixFee and tx.value, verify they're at least related or equal
       if (fixFee && nativeFeeAmount > 0n && txValue !== nativeFeeAmount) {
-        console.warn(`Warning: Transaction.value (${finalTx.value}) from API differs from reported fixFee (${fixFee}). Using tx.value for fee if payProtocolFee is true.`);
+        console.warn(
+          `Warning: Transaction.value (${finalTx.value}) from API differs from reported fixFee (${fixFee}). Using tx.value for fee if payProtocolFee is true.`,
+        );
         nativeFeeAmount = txValue; // Prioritize tx.value if different and present
       }
     }
@@ -294,14 +307,27 @@ export async function smartBridge(
 
     // 6. Send Transaction (Source Chain)
     const transactionValue = args.payProtocolFee ? nativeFeeAmount : 0n;
-    
+
     if (!args.payProtocolFee && nativeFeeAmount > 0n) {
-      console.log(`User has set payProtocolFee to false. Overriding transaction value from ${nativeFeeAmount.toString()} to 0.`);
-      console.log(`This is to ensure compatibility with paymasters that may not sponsor transactions with a native value.`);
-    } else if (args.payProtocolFee && nativeFeeAmount === 0n && finalTx.value && BigInt(finalTx.value) > 0n) {
-      console.warn(`Warning: payProtocolFee is true, but calculated nativeFeeAmount is 0. However, finalTx.value from API is ${finalTx.value}. Consider if this fee should be paid.`);
+      console.log(
+        `User has set payProtocolFee to false. Overriding transaction value from ${nativeFeeAmount.toString()} to 0.`,
+      );
+      console.log(
+        `This is to ensure compatibility with paymasters that may not sponsor transactions with a native value.`,
+      );
+    } else if (
+      args.payProtocolFee &&
+      nativeFeeAmount === 0n &&
+      finalTx.value &&
+      BigInt(finalTx.value) > 0n
+    ) {
+      console.warn(
+        `Warning: payProtocolFee is true, but calculated nativeFeeAmount is 0. However, finalTx.value from API is ${finalTx.value}. Consider if this fee should be paid.`,
+      );
     } else if (args.payProtocolFee && nativeFeeAmount > 0n) {
-      console.log(`Including deBridge protocol fee of ${nativeFeeAmount.toString()} wei in transaction value.`);
+      console.log(
+        `Including deBridge protocol fee of ${nativeFeeAmount.toString()} wei in transaction value.`,
+      );
     }
 
     const transactionToSubmit: Transaction = {
@@ -322,9 +348,15 @@ export async function smartBridge(
 
       if (!txResponse.success) {
         console.error("Bridge transaction failed details:", txResponse.error);
-        let errorMessage = typeof txResponse.error === "string" ? txResponse.error : JSON.stringify(txResponse.error);
-        
-        if (errorMessage.includes("execution reverted") || errorMessage.includes("missing response")) {
+        let errorMessage =
+          typeof txResponse.error === "string"
+            ? txResponse.error
+            : JSON.stringify(txResponse.error);
+
+        if (
+          errorMessage.includes("execution reverted") ||
+          errorMessage.includes("missing response")
+        ) {
           errorMessage += `\n\nThis may be due to one of the following issues:
 1. Insufficient token allowance for the deBridge contract to spend ${args.tokenInAddress}.
 2. Insufficient NATIVE currency balance in the smart account to cover the deBridge protocol fee (if payProtocolFee is true). Current fee: ${nativeFeeAmount > 0n ? formatBigIntToEth(nativeFeeAmount) + " native currency." : "(not detected or set to 0)."}
@@ -332,7 +364,7 @@ export async function smartBridge(
 4. Issues with the paymaster or bundler (e.g., account not funded with paymaster, or network congestion).
 5. If a pre-swap to a reserve asset was involved, there might have been issues with that internal swap.`;
         }
-        
+
         return `Bridge transaction failed: ${errorMessage}`;
       }
 
@@ -359,7 +391,7 @@ Slippage: ${slippageValue}%`;
       }
 
       resultMessage += `\nNote: Actual received amount may vary. Check the order status via Debridge for updates.`;
-      
+
       return resultMessage;
     } catch (error) {
       console.error("Error during bridge transaction submission:", error);
@@ -376,7 +408,7 @@ function formatBigIntToEth(wei: bigint): string {
   const etherValue = Number(wei) / 1e18;
   // Show more precision for very small ETH values, less for larger ones.
   if (etherValue === 0) return "0";
-  const precision = etherValue < 0.0001 ? 8 : (etherValue < 0.01 ? 6 : 4);
+  const precision = etherValue < 0.0001 ? 8 : etherValue < 0.01 ? 6 : 4;
   return etherValue.toFixed(precision);
 }
 
