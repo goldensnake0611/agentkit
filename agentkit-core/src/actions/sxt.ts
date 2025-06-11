@@ -59,8 +59,8 @@ export async function executeSxtSql(
     const response = await fetch("https://proxy.api.makeinfinite.dev/v1/sql", {
       method: "POST",
       headers: {
-        "accept": "application/json",
-        "apikey": apiKey,
+        accept: "application/json",
+        apikey: apiKey,
         "content-type": "application/json",
       },
       body: JSON.stringify({
@@ -71,21 +71,20 @@ export async function executeSxtSql(
     const responseBody = await response.text();
 
     if (!response.ok) {
-        let errorDetails = responseBody;
-        try {
-            errorDetails = JSON.stringify(JSON.parse(responseBody), null, 2);
-        } catch (_e) {
-            // Not a JSON response, use the raw text
-        }
-        return `Error from Space and Time API: ${response.status} ${response.statusText}\n${errorDetails}`;
+      let errorDetails = responseBody;
+      try {
+        errorDetails = JSON.stringify(JSON.parse(responseBody), null, 2);
+      } catch (_e) {
+        // Not a JSON response, use the raw text
+      }
+      return `Error from Space and Time API: ${response.status} ${response.statusText}\n${errorDetails}`;
     }
 
     try {
-        return JSON.stringify(JSON.parse(responseBody), null, 2);
+      return JSON.stringify(JSON.parse(responseBody), null, 2);
     } catch (_e) {
-        return responseBody;
+      return responseBody;
     }
-
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
     return `Error executing SQL query: ${errorMessage}`;
