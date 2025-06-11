@@ -64,12 +64,14 @@ export const SmartBridgeInput = z
       .startsWith("0x")
       .length(42)
       .optional()
+      .nullable()
       .describe(
         "Optional: The address to receive tokens on the destination chain. Defaults to your wallet address.",
       ),
     slippage: z
       .string()
       .optional()
+      .nullable()
       .default("1") // Defaulting to 1%
       .describe(
         "Optional: Slippage tolerance in percentage (e.g., '0.5' for 0.5%). Default is '1'.",
@@ -77,6 +79,7 @@ export const SmartBridgeInput = z
     approveMax: z
       .boolean()
       .optional()
+      .nullable()
       .default(false)
       .describe(
         "Optional: Whether to approve maximum token allowance for the input token. Default is false.",
@@ -84,7 +87,8 @@ export const SmartBridgeInput = z
     payProtocolFee: z
       .boolean()
       .optional()
-      .default(true) // CHANGED: Default to true as deBridge requires this native fee.
+      .nullable()
+      .default(true) // CHANGED: Default to true as deBridge requires this.
       .describe(
         "Optional: Whether to include the deBridge protocol fee. Default is true. Smart account needs NATIVE currency for this.",
       ),
@@ -135,7 +139,7 @@ export async function smartBridge(
       srcChainTokenInAmount: formattedAmount, // Using formatted amount
       dstChainTokenOut: args.tokenOutAddress,
       dstChainTokenOutRecipient: recipient,
-      slippage: args.slippage,
+      slippage: args.slippage ?? "1",
       senderAddress: senderAddress, // Required by create-tx
       // Explicitly set authority addresses to ensure we get the final transaction
       srcChainOrderAuthorityAddress: senderAddress,
