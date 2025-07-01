@@ -16,6 +16,7 @@ import {
   SearchPairsAction,
   GetPairsByTokenAddressesAction,
 } from "./DexScreenerAction";
+import { DisperseAction } from "./disperseAction";
 
 export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
   return [
@@ -35,6 +36,7 @@ export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
     new GetPairsByChainAndAddressAction(),
     new SearchPairsAction(),
     new GetPairsByTokenAddressesAction(),
+    new DisperseAction(),
   ];
 }
 
