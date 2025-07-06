@@ -7,6 +7,15 @@ import { AgentkitAction, ActionSchemaAny } from "../agentkit";
 import { GetAddressAction } from "./getAddressAction";
 import { CreateAndStoreKeyAction } from "./createAndStoreKeyAction";
 import { SxtAction } from "./sxt";
+import {
+  GetLatestTokenProfilesAction,
+  GetLatestBoostedTokensAction,
+  GetTopBoostedTokensAction,
+  GetTokenOrdersAction,
+  GetPairsByChainAndAddressAction,
+  SearchPairsAction,
+  GetPairsByTokenAddressesAction,
+} from "./DexScreenerAction";
 import { DisperseAction } from "./disperseAction";
 
 export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
@@ -20,6 +29,13 @@ export function getAllAgentkitActions(): AgentkitAction<ActionSchemaAny>[] {
     new SmartBridgeAction(),
     new CreateAndStoreKeyAction(),
     new SxtAction(),
+    new GetLatestTokenProfilesAction(),
+    new GetLatestBoostedTokensAction(),
+    new GetTopBoostedTokensAction(),
+    new GetTokenOrdersAction(),
+    new GetPairsByChainAndAddressAction(),
+    new SearchPairsAction(),
+    new GetPairsByTokenAddressesAction(),
     new DisperseAction(),
   ];
 }
