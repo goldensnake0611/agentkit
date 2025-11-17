@@ -43,7 +43,7 @@
 - Get wallet details and balances
 - Create and manage smart accounts
 
-***How it works***
+**How it works**
 
 0xGasless AgentKit leverages ERC-4337 account abstraction to enable gasless transactions:
 1. Configure your agent with a wallet
